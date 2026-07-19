@@ -176,7 +176,7 @@ def pct_change_of(close_series):
 # ── Data fetching ────────────────────────────────────────────────────────────
 def fetch_fno_data(symbol: str):
     ticker = f"{symbol.strip().upper()}.NS"
-    daily = yf.download(ticker, period="2y", interval="1d", progress=False, auto_adjust=True)
+    daily = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
     if daily.empty:
         return None
     if isinstance(daily.columns, pd.MultiIndex):
@@ -193,7 +193,7 @@ def fetch_fno_data(symbol: str):
 
 def fetch_equity_data(symbol: str):
     ticker = f"{symbol.strip().upper()}.NS"
-    daily = yf.download(ticker, period="2y", interval="1d", progress=False, auto_adjust=True)
+    daily = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
     if daily.empty:
         return None
     if isinstance(daily.columns, pd.MultiIndex):
@@ -295,7 +295,7 @@ def analyze_equity_stock(symbol: str) -> Optional[dict]:
     }
 
 
-def parallel_analyze(symbols: list[str], analyze_fn, max_workers: int = 12):
+def parallel_analyze(symbols: list[str], analyze_fn, max_workers: int = 4):
     results, failed = [], []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_sym = {executor.submit(analyze_fn, s): s for s in symbols}
@@ -348,7 +348,7 @@ DEFAULT_EQUITY_STOCKS = [
 # ── API Routes ───────────────────────────────────────────────────────────────
 def fetch_index_data(ticker: str):
     """For index tickers like ^NSEI — no .NS suffix, already the full yfinance symbol."""
-    daily = yf.download(ticker, period="2y", interval="1d", progress=False, auto_adjust=True)
+    daily = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True)
     if daily.empty:
         return None
     if isinstance(daily.columns, pd.MultiIndex):
