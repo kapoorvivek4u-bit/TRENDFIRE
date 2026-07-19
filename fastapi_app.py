@@ -47,11 +47,16 @@ app.add_middleware(
 
 
 # ── Core squeeze logic (identical to the Streamlit app) ─────────────────────
-def linreg_series(series, length):
+def linreg_series(series, length, only_last=2):
+    """Rolling linear-regression oscillator. We only ever need the last 2 values
+    (current + previous reading) downstream, so by default this only computes
+    those — instead of looping over the entire 2-year history, which was the
+    main CPU bottleneck when scanning 200+ stocks on a constrained server."""
     values = series.values
     result = np.full(len(values), np.nan)
     x = np.arange(length)
-    for i in range(length - 1, len(values)):
+    start = max(length - 1, len(values) - only_last) if only_last else (length - 1)
+    for i in range(start, len(values)):
         y = values[i - length + 1:i + 1]
         if np.any(np.isnan(y)):
             continue
