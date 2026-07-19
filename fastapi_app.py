@@ -23,6 +23,8 @@ Endpoints:
 """
 
 from fastapi import FastAPI, Query, HTTPException
+import time
+import threading
 from fastapi.middleware.cors import CORSMiddleware
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
@@ -173,6 +175,26 @@ def pct_change_of(close_series):
     return None
 
 
+_cache_lock = threading.Lock()
+_CACHE = {}
+CACHE_TTL_SECONDS = 900  # 15 minutes — same TTL as the Streamlit app used
+
+def cached_result(cache_key, compute_fn):
+    """Returns a cached result if it's still fresh (within CACHE_TTL_SECONDS),
+    otherwise computes it fresh and stores it. This means repeated scans within
+    the same 15-min window are near-instant instead of re-fetching from Yahoo
+    Finance every single time."""
+    now = time.time()
+    with _cache_lock:
+        entry = _CACHE.get(cache_key)
+        if entry and (now - entry[0]) < CACHE_TTL_SECONDS:
+            return entry[1]
+    result = compute_fn()
+    with _cache_lock:
+        _CACHE[cache_key] = (now, result)
+    return result
+
+
 # ── Data fetching ────────────────────────────────────────────────────────────
 def fetch_fno_data(symbol: str):
     ticker = f"{symbol.strip().upper()}.NS"
@@ -204,7 +226,7 @@ def fetch_equity_data(symbol: str):
 
 
 # ── Analysis (returns plain dicts — perfect for JSON API responses) ─────────
-def analyze_fno_stock(symbol: str) -> Optional[dict]:
+def _analyze_fno_stock_uncached(symbol: str) -> Optional[dict]:
     data = fetch_fno_data(symbol)
     if data is None or data["H"].empty or len(data["D"]) < 60:
         return None
@@ -256,7 +278,13 @@ def analyze_fno_stock(symbol: str) -> Optional[dict]:
     }
 
 
-def analyze_equity_stock(symbol: str) -> Optional[dict]:
+def analyze_fno_stock(symbol: str) -> Optional[dict]:
+    """Cached wrapper — repeated scans within CACHE_TTL_SECONDS reuse the last
+    result instead of re-fetching from Yahoo Finance every time."""
+    return cached_result(f"fno:{symbol.strip().upper()}", lambda: _analyze_fno_stock_uncached(symbol))
+
+
+def _analyze_equity_stock_uncached(symbol: str) -> Optional[dict]:
     data = fetch_equity_data(symbol)
     if data is None or len(data["D"]) < 60:
         return None
@@ -293,6 +321,11 @@ def analyze_equity_stock(symbol: str) -> Optional[dict]:
         "vol_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
         "pct_change": round(pct_change_of(data["D"]["Close"]), 2) if pct_change_of(data["D"]["Close"]) is not None else None,
     }
+
+
+def analyze_equity_stock(symbol: str) -> Optional[dict]:
+    """Cached wrapper — same 15-min TTL cache as the FNO version."""
+    return cached_result(f"equity:{symbol.strip().upper()}", lambda: _analyze_equity_stock_uncached(symbol))
 
 
 def parallel_analyze(symbols: list[str], analyze_fn, max_workers: int = 4):
